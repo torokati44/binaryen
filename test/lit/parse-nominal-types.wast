@@ -56,10 +56,10 @@
 
 ;; array type
 (module
-  ;; CHECK:      (type $sub (array i8) (extends $super))
+  ;; CHECK:      (type $sub (array (mut i8)) (extends $super))
   (type $sub (array_subtype i8 $super))
 
-  ;; CHECK:      (type $super (array i8))
+  ;; CHECK:      (type $super (array (mut i8)))
   (type $super (array_subtype i8 data))
 
   ;; CHECK:      (global $g (ref null $super) (ref.null $sub))

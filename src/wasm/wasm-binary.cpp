@@ -241,12 +241,12 @@ void WasmBinaryWriter::writeTypes() {
       auto fields = type.getStruct().fields;
       o << U32LEB(fields.size());
       for (const auto& field : fields) {
-        writeField(field);
+        writeField(type, field);
       }
     } else if (type.isArray()) {
       o << S32LEB(nominal ? BinaryConsts::EncodedType::ArrayExtending
                           : BinaryConsts::EncodedType::Array);
-      writeField(type.getArray().element);
+      writeField(type, type.getArray().element);
     } else {
       WASM_UNREACHABLE("TODO GC type writing");
     }
@@ -1326,7 +1326,7 @@ void WasmBinaryWriter::writeIndexedHeapType(HeapType type) {
   o << U32LEB(getTypeIndex(type));
 }
 
-void WasmBinaryWriter::writeField(const Field& field) {
+void WasmBinaryWriter::writeField(HeapType type, const Field& field) {
   if (field.type == Type::i32 && field.packedType != Field::not_packed) {
     if (field.packedType == Field::i8) {
       o << S32LEB(BinaryConsts::EncodedType::i8);
@@ -1338,7 +1338,15 @@ void WasmBinaryWriter::writeField(const Field& field) {
   } else {
     writeType(field.type);
   }
-  o << U32LEB(field.mutable_);
+  auto mutable_ = field.mutable_;
+  // Immutable arrays are not yet allowed in the spec. While we experiment, do
+  // not emit them in the binary format (but they are still useful in IR for
+  // optimizations), while we wait for the spec and VMs to update.
+  // https://github.com/WebAssembly/gc/issues/250
+  if (type.isArray()) {
+    mutable_ = Mutable;
+  }
+  o << U32LEB(mutable_);
 }
 
 // reader

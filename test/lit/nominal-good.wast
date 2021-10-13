@@ -14,13 +14,12 @@
   ;; EQUIREC:      (type $sub-struct (struct (field i32) (field i64)))
   (type $sub-struct (struct i32 i64) (extends $super-struct))
 
-  ;; NOMINAL:      (type $super-array (array (ref $super-struct)))
-  ;; EQUIREC:      (type $super-array (array (ref $super-struct)))
-  (type $super-array (array (ref $super-struct)))
+  ;; NOMINAL:      (type $super-array (array (mut (ref $super-struct))))
+  (type $super-array (array (mut (ref $super-struct))))
 
-  ;; NOMINAL:      (type $sub-array (array (ref $sub-struct)) (extends $super-array))
-  ;; EQUIREC:      (type $sub-array (array (ref $sub-struct)))
-  (type $sub-array (array (ref $sub-struct)) (extends $super-array))
+  ;; NOMINAL:      (type $sub-array (array (mut (ref $super-struct))) (extends $super-array))
+  ;; EQUIREC:      (type $sub-array (array (mut (ref $super-struct))))
+  (type $sub-array (array (mut (ref $super-struct))) (extends $super-array))
 
   ;; TODO: signature types as well, once functions store their HeapTypes.
 
@@ -47,7 +46,7 @@
   ;; NOMINAL:      (func $make-super-array (result (ref $super-array))
   ;; NOMINAL-NEXT:  (call $make-sub-array)
   ;; NOMINAL-NEXT: )
-  ;; EQUIREC:      (func $make-super-array (result (ref $super-array))
+  ;; EQUIREC:      (func $make-super-array (result (ref $sub-array))
   ;; EQUIREC-NEXT:  (call $make-sub-array)
   ;; EQUIREC-NEXT: )
   (func $make-super-array (result (ref $super-array))

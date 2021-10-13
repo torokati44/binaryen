@@ -1284,7 +1284,7 @@ public:
   // types.
   void writeIndexedHeapType(HeapType type);
 
-  void writeField(const Field& field);
+  void writeField(HeapType type, const Field& field);
 
 private:
   Module* wasm;
