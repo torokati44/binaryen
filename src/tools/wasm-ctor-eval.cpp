@@ -62,6 +62,7 @@ public:
 
   void seal() { sealed = true; }
 
+#if 0
   // for equality purposes, we just care about the globals
   // and whether they have changed
   bool operator==(const EvallingGlobalManager& other) {
@@ -70,6 +71,7 @@ public:
   bool operator!=(const EvallingGlobalManager& other) {
     return !(*this == other);
   }
+#endif
 
   Literals& operator[](Name name) {
     if (dangerousGlobals.count(name) > 0) {
@@ -110,6 +112,13 @@ public:
   }
 
   Iterator end() { return Iterator(); }
+
+  void apply(Module& wasm) {
+    Builder builder(wasm);
+    for (const auto& [name, value] : globals) {
+      wasm.getGlobal(name)->init = builder.makeConstantExpression(value);
+    }
+  }
 };
 
 // Use a ridiculously large stack size.
@@ -446,7 +455,8 @@ private:
   }
 };
 
-void evalCtors(Module& wasm, std::vector<std::string> ctors) {
+// Returns the number of ctors evalled succesfully.
+Index evalCtors(Module& wasm, std::vector<std::string> ctors) {
   // build and link the env module
   auto envModule = buildEnvModule(wasm);
   CtorEvalExternalInterface envInterface;
@@ -456,6 +466,8 @@ void evalCtors(Module& wasm, std::vector<std::string> ctors) {
 
   std::map<Name, std::shared_ptr<EvallingModuleInstance>> linkedInstances;
   linkedInstances["env"] = envInstance;
+
+  Index evalled = 0;
 
   CtorEvalExternalInterface interface(linkedInstances);
   try {
@@ -477,9 +489,6 @@ void evalCtors(Module& wasm, std::vector<std::string> ctors) {
       std::cerr << "trying to eval " << ctor << '\n';
       // snapshot memory, as either the entire function is done, or none
       auto memoryBefore = wasm.memory;
-      // snapshot globals (note that STACKTOP might be modified, but should
-      // be returned, so that works out)
-      auto globalsBefore = instance.globals;
       Export* ex = wasm.getExportOrNull(ctor);
       if (!ex) {
         Fatal() << "export not found: " << ctor;
@@ -491,12 +500,7 @@ void evalCtors(Module& wasm, std::vector<std::string> ctors) {
         // memory changes first
         std::cerr << "  ...stopping since could not eval: " << fail.why << "\n";
         wasm.memory = memoryBefore;
-        return;
-      }
-      if (instance.globals != globalsBefore) {
-        std::cerr << "  ...stopping since globals modified\n";
-        wasm.memory = memoryBefore;
-        return;
+        return evalled;
       }
       std::cerr << "  ...success on " << ctor << ".\n";
       // success, the entire function was evalled!
@@ -506,13 +510,18 @@ void evalCtors(Module& wasm, std::vector<std::string> ctors) {
       auto* func = wasm.getFunction(exp->value);
       func->body = wasm.allocator.alloc<Nop>();
       wasm.removeExport(exp->name);
+
+      // Update the globals to their new values.
+      instance.globals.apply(wasm);
+
+      evalled++;
     }
   } catch (FailToEvalException& fail) {
     // that's it, we failed to even create the instance
     std::cerr << "  ...stopping since could not create module instance: "
               << fail.why << "\n";
-    return;
   }
+  return evalled;
 }
 
 //
@@ -590,7 +599,10 @@ int main(int argc, const char* argv[]) {
   while (std::getline(stream, temp, ',')) {
     ctors.push_back(temp);
   }
-  evalCtors(wasm, ctors);
+  if (evalCtors(wasm, ctors) == 0) {
+    //return 0; // TODO return errar
+    // TODO: Fatal() << "failed to eval any ctors";
+  }
 
   // Do some useful optimizations after the evalling
   {
