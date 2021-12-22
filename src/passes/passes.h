@@ -134,6 +134,7 @@ Pass* createTrapModeClamp();
 Pass* createTrapModeJS();
 Pass* createTypeRefiningPass();
 Pass* createUnteePass();
+Pass* createUseBulkMemoryIntrinsicsPass();
 Pass* createVacuumPass();
 
 // Test passes:

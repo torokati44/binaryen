@@ -419,6 +419,9 @@ void PassRegistry::registerPasses() {
   registerPass("untee",
                "removes local.tees, replacing them with sets and gets",
                createUnteePass);
+  registerPass("use-bulk-memory-intrinsics",
+               "replaces memset and memcpy with memory.fill and memory.copy",
+               createUseBulkMemoryIntrinsicsPass);
   registerPass("vacuum", "removes obviously unneeded code", createVacuumPass);
   // registerPass(
   //   "lower-i64", "lowers i64 into pairs of i32s", createLowerInt64Pass);
@@ -538,6 +541,7 @@ void PassRunner::addDefaultFunctionOptimizationPasses() {
     addIfNoDWARFIssues(
       "rse"); // after all coalesce-locals, and before a final vacuum
   }
+  addIfNoDWARFIssues("use-bulk-memory-intrinsics"); // just to be safe
   addIfNoDWARFIssues("vacuum"); // just to be safe
 }
 

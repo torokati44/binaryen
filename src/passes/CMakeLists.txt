@@ -91,6 +91,7 @@ set(passes_SOURCES
   StackCheck.cpp
   SSAify.cpp
   Untee.cpp
+  UseBulkMemoryIntrinsics.cpp
   Vacuum.cpp
   ${CMAKE_CURRENT_BINARY_DIR}/WasmIntrinsics.cpp
   ${passes_HEADERS}
