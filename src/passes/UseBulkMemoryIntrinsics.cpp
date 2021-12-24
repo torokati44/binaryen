@@ -46,13 +46,138 @@ struct UseBulkMemoryIntrinsics
 
   Pass* create() override { return new UseBulkMemoryIntrinsics(); }
 
+  struct MemSetRange {
+    int baseLocalIndex = -1;
+    int offsetBegin = 0; // inclusive
+    int offsetEnd = 0; // exclusive
+    int storedValueLocalIndex = 0;
+
+    bool isValid() { return baseLocalIndex >= 0 && offsetBegin <= offsetEnd; }
+    bool isEmpty() { return isValid() && offsetBegin == offsetEnd; }
+
+    static MemSetRange merge(MemSetRange a, MemSetRange b) {
+      if (!a.isValid() || !b.isValid() || a.baseLocalIndex != b.baseLocalIndex || a.storedValueLocalIndex != b.storedValueLocalIndex)
+        return MemSetRange();
+      if (a.offsetEnd == b.offsetBegin || a.offsetBegin == b.offsetEnd)
+        return MemSetRange{a.baseLocalIndex, std::min(a.offsetBegin, b.offsetBegin),
+                                      std::max(a.offsetEnd, b.offsetEnd), a.storedValueLocalIndex};
+      return MemSetRange();
+    }
+  };
+
+  std::pair<int, int> isLocalBasePlusConstOffset(Expression *expr) {
+    if (LocalGet *directGet = expr->dynCast<LocalGet>()) {
+      return {directGet->index, 0};
+    }
+
+    if (Binary *basePlusConstOffset = expr->dynCast<Binary>()) {
+      if (basePlusConstOffset->op == AddInt32) {
+        LocalGet *leftLocalGet = basePlusConstOffset->left->dynCast<LocalGet>();
+        LocalGet *rightLocalGet = basePlusConstOffset->right->dynCast<LocalGet>();
+        Const *leftConst = basePlusConstOffset->left->dynCast<Const>();
+        Const *rightConst = basePlusConstOffset->right->dynCast<Const>();
+
+        LocalGet *localGet = nullptr;
+        Const *constant = nullptr;
+
+        if (leftLocalGet && rightConst) {
+          localGet = leftLocalGet;
+          constant = rightConst;
+        } else if (rightLocalGet && leftConst) {
+          localGet = rightLocalGet;
+          constant = leftConst;
+        }
+        else {
+          return {-1, 0};
+        }
+
+        if (constant->value.type == Type::i32) {
+          return {localGet->index, constant->value.geti32()};
+        }
+      }
+    }
+    return {-1, 0};
+  }
+
+  MemSetRange isMemSetOperation(Expression *expr) {
+
+    if (Store *store = expr->dynCast<Store>()) {
+      if (LocalGet *valueLocalGet = store->value->dynCast<LocalGet>()) {
+        std::pair<int, int> storeBasePlusOffset = isLocalBasePlusConstOffset(store->ptr);
+        if (storeBasePlusOffset.first >= 0) {
+          std::cout << "ismemset: " << (int)valueLocalGet->index << storeBasePlusOffset.first << storeBasePlusOffset.second << std::endl;
+          return {storeBasePlusOffset.first, storeBasePlusOffset.second, storeBasePlusOffset.second+1, (int)valueLocalGet->index};
+        }
+      }
+    }
+
+    if (MemoryFill *fill = expr->dynCast<MemoryFill>()) {
+      if (LocalGet *valueLocalGet = fill->value->dynCast<LocalGet>()) {
+        std::pair<int, int> storeBasePlusOffset = isLocalBasePlusConstOffset(fill->dest);
+        if (Const *sizeConst = fill->size->dynCast<Const>()) {
+          if (sizeConst->value.type == Type::i32) {
+            int size = sizeConst->value.geti32();
+            if (storeBasePlusOffset.first >= 0) {
+              std::cout << "ismemset: " << (int)valueLocalGet->index << storeBasePlusOffset.first << storeBasePlusOffset.second << std::endl;
+              return {storeBasePlusOffset.first, storeBasePlusOffset.second, storeBasePlusOffset.second+size, (int)valueLocalGet->index};
+            }
+          }
+        }
+      }
+
+    }
+
+    return {-1, 0, 0};
+  }
+
+  MemSetRange tryMerge(Expression *a, Expression *b) {
+    auto range_a = isMemSetOperation(a);
+    auto range_b = isMemSetOperation(b);
+
+    return MemSetRange::merge(range_a, range_b);
+  }
+
+  void visitExpression(Expression *curr) {
+
+    Builder builder(*getModule());
+
+    if (Block *block = curr->dynCast<Block>()) {
+      //std::cout << "storeExpression.." << std::endl;
+
+      for (int i = 0; i < (int)block->list.size() - 1; ++i) {
+        Expression *a = block->list[i];
+        Expression *b = block->list[i + 1];
+        MemSetRange merged = tryMerge(a, b);
+        if (merged.isValid()) {
+          std::cout << "merging into " << merged.offsetEnd - merged.offsetBegin << " long" << std::endl;
+
+          block->list[i] = builder.makeMemoryFill(
+          builder.makeBinary(BinaryOp::AddInt32,
+            builder.makeLocalGet(merged.baseLocalIndex, Type::i32),
+            builder.makeConst(merged.offsetBegin)
+          ),
+          builder.makeLocalGet(merged.storedValueLocalIndex, Type::i32),
+          builder.makeConst(merged.offsetEnd-merged.offsetBegin));
+          block->list.erase(block->list.begin() + i + 1);
+          i--;
+        }
+      }
+    }
+
+  }
+
   void doWalkFunction(Function* func) {
+    PostWalker::doWalkFunction(func);
+/*
+    Builder builder(*getModule());
+    Block *body = (Block *)func->body;
+
+
     if (func->name.hasSubstring("memcpy")) {
       func->body->dump();
       std::cout << "memcpy!" << std::endl;
 
-    Builder builder(*getModule());
-    Block *body = (Block *)func->body;
+
 
     body->list.clear();
     body->list.push_back(builder.makeMemoryCopy(builder.makeLocalGet(0, Type::i32),
@@ -77,6 +202,7 @@ struct UseBulkMemoryIntrinsics
     body->list.push_back(builder.makeReturn(builder.makeLocalGet(0, Type::i32)));
 
     }
+    */
   }
 
 };

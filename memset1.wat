@@ -1,5 +1,6 @@
 (module
-(func $memset (type 8) (param i32 i32 i32) (result i32)
+  (type (;0;) (func (param i32 i32 i32) (result i32)))
+  (func $memset (type 0) (param i32 i32 i32) (result i32)
     (local i32 i32 i32)
     block  ;; label = @1
       local.get 2
@@ -93,4 +94,5 @@
       end
     end
     local.get 0)
+  (memory (;0;) 0)
 )
